@@ -1,7 +1,5 @@
 require "options"
-require "plugins"
-require "conf/init"
-require "lsp/init"
--- set keymaps after user defined-configs
+require "config.lazy"
 require "keymaps"
-require "autocommands"
+
+require "config.symbols-outline"
