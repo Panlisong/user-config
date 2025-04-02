@@ -8,7 +8,7 @@ M.config = {
 M.tags = {}
 
 -- tag a line
-function M.TagLine(input)
+function M.TagAdd(input)
     local tag = input:match("^(%S+)")
     local brief = input:match("%S+%s+(.+)") or ""
     if not tag or tag == "" then
@@ -21,6 +21,51 @@ function M.TagLine(input)
     local file = vim.fn.expand("%:~:.")
     local line = vim.api.nvim_win_get_cursor(0)[1]
     M.tags[tag] = { file = file, line = line, brief = brief }
+end
+
+function M.UpdateTagWindow()
+    if not M.tag_win_id then
+        return
+    end
+
+    local tag_buf = vim.api.nvim_win_get_buf(M.tag_win_id)
+    vim.api.nvim_set_option_value("modifiable", true, { buf = tag_buf })
+    vim.api.nvim_buf_set_lines(tag_buf, 0, -1, false, {})
+
+    local tag_lines = { "Tags:" }
+    local tag_list = {}
+    for tag, tag_info in pairs(M.tags) do
+        table.insert(tag_list, { tag, tag_info })
+    end
+
+    table.sort(tag_list, function(a, b)
+        return a[1] < b[1]
+    end)
+
+    for _, tag_data in ipairs(tag_list) do
+        local tag, tag_info = tag_data[1], tag_data[2]
+        table.insert(tag_lines, tag)
+        table.insert(tag_lines, string.format("    %s:%d", tag_info.file, tag_info.line))
+        table.insert(tag_lines, "    " .. tag_info.brief)
+    end
+
+    vim.api.nvim_buf_set_lines(tag_buf, 0, -1, false, tag_lines)
+    vim.api.nvim_set_option_value("modifiable", false, { buf = tag_buf })
+end
+
+function M.TagDel(tag)
+    if not tag or tag == "" then
+        print("[tag-jump] plz input a tag name!")
+    end
+
+    if not M.tags[tag] then
+        return
+    end
+    M.tags[tag] = nil
+
+    if M.tag_win_id then
+        M.UpdateTagWindow()
+    end
 end
 
 -- jump to the line of tag
@@ -77,7 +122,8 @@ function M.Tags()
         style = "minimal",
         border = "rounded",
     }
-    M.tag_win_id= vim.api.nvim_open_win(tag_buf, true, tag_win_opts)
+    M.tag_win_id = vim.api.nvim_open_win(tag_buf, true, tag_win_opts)
+    M.UpdateTagWindow()
 
     -- right window with text context
     local context_buf = vim.api.nvim_create_buf(false, true)
@@ -92,40 +138,32 @@ function M.Tags()
     }
     M.context_win_id = vim.api.nvim_open_win(context_buf, true, context_win_opts)
 
-    -- contents of left window
-    local tag_lines = { "Tags:" }
-    local tag_list = {}
-    for tag, tag_info in pairs(M.tags) do
-        table.insert(tag_list, { tag, tag_info })
-    end
-
-    table.sort(tag_list, function(a, b)
-        return a[1] < b[1]
-    end)
-
-    for _, tag_data in ipairs(tag_list) do
-        local tag, tag_info = tag_data[1], tag_data[2]
-        table.insert(tag_lines, tag)
-        table.insert(tag_lines, string.format("    %s:%d", tag_info.file, tag_info.line))
-        table.insert(tag_lines, "    " .. tag_info.brief)
-    end
-    vim.api.nvim_buf_set_lines(tag_buf, 0, -1, false, tag_lines)
-
+    -- put cursor in left tag window
     vim.api.nvim_set_current_win(M.tag_win_id)
 
+    -- monitor cursor in left tag window
     vim.api.nvim_create_autocmd("CursorMoved", {
         buffer = tag_buf,
         callback = function()
-            M.UpdateContextWindow(tag_buf, context_buf)
+            M.UpdateContextWindow()
         end,
     })
 end
 
 -- update text contents by tag
-function M.UpdateContextWindow(tag_buf, context_buf)
+function M.UpdateContextWindow()
+    local tag_buf = vim.api.nvim_win_get_buf(M.tag_win_id)
+    local context_buf = vim.api.nvim_win_get_buf(M.context_win_id)
+
     local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
     local lines = vim.api.nvim_buf_get_lines(tag_buf, 0, -1, false)
     local tag_name = nil
+
+    -- first line is "Tags:"
+    if cursor_line == 1 then
+        vim.api.nvim_buf_set_lines(context_buf, 0, -1, false, {})
+        return
+    end
 
     for i = cursor_line, 1, -1 do
         local line = lines[i]
@@ -147,7 +185,7 @@ function M.UpdateContextWindow(tag_buf, context_buf)
     local file_bufnr = vim.fn.bufnr(file, true)
 
     if file_bufnr ~= -1 then
-        context_lines = vim.api.nvim_buf_get_lines(file_bufnr, math.max(0, line - 25), line + 24 , false)
+        context_lines = vim.api.nvim_buf_get_lines(file_bufnr, math.max(0, line - 25), line + 24, false)
     else
         context_lines = { "[Cannot load file: " .. file .. "]" }
     end
@@ -157,8 +195,11 @@ function M.UpdateContextWindow(tag_buf, context_buf)
 end
 
 function M.setup()
-    vim.api.nvim_create_user_command("TagLine", function(opts)
-        M.TagLine(opts.args)
+    vim.api.nvim_create_user_command("TagAdd", function(opts)
+        M.TagAdd(opts.args)
+    end, { nargs = 1 })
+    vim.api.nvim_create_user_command("TagDel", function(opts)
+        M.TagDel(opts.args)
     end, { nargs = 1 })
     vim.api.nvim_create_user_command("TagJump", function(opts)
         M.TagJump(opts.args)
