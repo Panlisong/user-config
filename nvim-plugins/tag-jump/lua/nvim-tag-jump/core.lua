@@ -92,7 +92,7 @@ function M.TagJump(tag)
 end
 
 -- show all tags and corresponding context
-function M.Tags()
+function M.TagList()
     if vim.tbl_isempty(M.tags) then
         print("[tag-jump] Not tags Now!")
         return
@@ -204,8 +204,8 @@ function M.setup()
     vim.api.nvim_create_user_command("TagJump", function(opts)
         M.TagJump(opts.args)
     end, { nargs = 1 })
-    vim.api.nvim_create_user_command("Tags", function()
-        M.Tags()
+    vim.api.nvim_create_user_command("TagList", function()
+        M.TagList()
     end, {})
 end
 
